@@ -9,7 +9,7 @@ var hashtags = ["thewalkingdead", "walkingdead", "gameofthrones", "residentevil"
 
 function go() {
   // And go for login
-  Client.Session.create(device, storage, 'worldscollidingstore', 'Zabbas4242!')
+  Client.Session.create(device, storage, 'worldscollidingstore', '******')
     .then(function(session) {
       // Now you have a session, we can follow / unfollow, anything...
       // And we want to follow Instagram official profile
