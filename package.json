@@ -2,6 +2,7 @@
   "dependencies": {
     "instagram-private-api": "^0.5.3",
     "js-csp": "^0.9.0",
+    "nodemon": "^1.11.0",
     "yarn": "^0.19.1"
   }
 }

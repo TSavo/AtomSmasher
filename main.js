@@ -3,17 +3,20 @@ var device = new Client.Device('worldscollidingstore');
 var _ = require("underscore");
 var storage = new Client.CookieFileStorage(__dirname + '/cookies/worldscollidingstore.json');
 var csp = require("js-csp");
-var messages = ["This is great!", "Love this!", "I love this.", "Fantastic!", "Love it!", "More like this please!", ":)", "<3", "I so love this...", "Yes!", "Fantastic.", "Wonderful.", "Please, more like it! :)", "We need more like this. <3"];
-var suffix = ["", "", "", "", "", "", "", "", "", "", " :)", " <3", " <3 <3 <3", " Yes!", " Thank you!"];
+var messages = ["This is so great.", "Wonderful!", "This is great!", "Love this!", "I love this.", "Fantastic!", "Love it!", "More like this please!", ":)", "<3", "I so love this...", "Yes!", "Fantastic.", "Wonderful.", "Please, more like it! :)", "We need more like this. <3"];
+var suffix = ["", "", "", "", "", "", "", "", "", "", " :)", " <3", " <3 <3 <3", " Yes!", " Thank you!", " Can we get more like it?", "👍👋", "😍", "❤"];
 var hashtags = ["thewalkingdead", "walkingdead", "gameofthrones", "residentevil", "harrypotter", "mrrobot"];
 
 function go() {
   // And go for login
-  Client.Session.create(device, storage, 'worldscollidingstore', '******')
+  Client.Session.create(device, storage, 'worldscollidingstore', 'Zabbas4242!')
     .then(function(session) {
       // Now you have a session, we can follow / unfollow, anything...
       // And we want to follow Instagram official profile
       //return [session, Search(session, "walkingdead")];
+      //MediaComments(session).then(function(comments){
+      //  console.log(comments);
+      //});
       return [session, new Client.Feed.TaggedMedia(session, hashtags[parseInt(Math.random() * hashtags.length)]).get()]
         //return [session, (new Client.Feed.SelfLiked(session)).get()]
     }).spread(function(session, media) {
@@ -34,10 +37,12 @@ function go() {
         });
       }
     });
-  setTimeout(go, 100000 + Math.random() * 600000)
+  
+  setTimeout(go, 100000 + Math.random() * 100000)
 }
 
 go();
+
 
 //   .spread(function(session, hashtag) {
 //      console.log(hashtag[0]);
@@ -76,4 +81,12 @@ function Follow(instagramSession, account) {
 
 function FindUser(instagramSession, username) {
   return Client.Account.searchForUser(instagramSession, username);
+}
+
+function Inbox(instagramSession){
+  return new Client.Feed.Inbox(instagramSession).get();
+}
+
+function MediaComments(instagramSession){
+  return new Client.Feed.MediaComments(instagramSession).get();
 }
