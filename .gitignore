@@ -38,3 +38,7 @@ jspm_packages
 
 cookies
 nohup.out
+.credentials.json
+.idea
+*.jpg
+

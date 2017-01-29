@@ -1,8 +1,12 @@
 {
   "dependencies": {
+    "fb": "^1.1.1",
+    "fb-node": "^0.1.6",
+    "gm": "^1.23.0",
     "instagram-private-api": "^0.5.3",
     "js-csp": "^0.9.0",
     "nodemon": "^1.11.0",
+    "shopify-node-api": "^1.7.6",
     "yarn": "^0.19.1"
   }
 }
