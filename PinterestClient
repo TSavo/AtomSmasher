@@ -1,0 +1,51 @@
+var PinterestDK = require('node-pinterest');
+const fs = require("fs");
+const _ = require("underscore");
+
+
+class PinterestClient {
+    constructor(db, pinterestApi) {
+        this.db = db;
+        this.pinterestApi = pinterestApi;
+    }
+
+    static async create(db) {
+        const credentials = await db.collection("credentials").findOne({pinterest: {$exists: true}});
+        return new PinterestClient(db, PinterestDK.init(credentials.pinterest.access_token));
+    }
+
+    async findBestBoards(hashtags) {
+        const boards = (await this.pinterestApi.api('me/boards')).data;
+        var bestBoards = [];
+        hashtags.split(" ").map(function (tag) {
+            return tag.trim().replace(/[#\s-]/g, "").toLowerCase();
+        }).forEach(function (tag) {
+            var found = _(boards).find(function (board) {
+                return board.name.trim().replace(/\s/g, "").replace(/-/g, "").toLowerCase().startsWith(tag);
+            });
+            if (found) {
+                bestBoards.push(found);
+            }
+        });
+        return _.unique(bestBoards);
+    }
+
+    async post(path, caption, link, imgUrl, hashtags) {
+        const self = this;
+        return Promise.all((await self.findBestBoards(hashtags))
+            .map((board) => {
+                return self.pinterestApi.api('pins', {
+                        method: 'POST',
+                        body: {
+                            board: board.id,
+                            note: caption,
+                            link: link,
+                            image_url: imgUrl
+                        }
+                    }
+                );
+            }));
+    }
+}
+
+module.exports = PinterestClient;
