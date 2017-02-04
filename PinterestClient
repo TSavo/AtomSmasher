@@ -1,17 +1,17 @@
 var PinterestDK = require('node-pinterest');
 const fs = require("fs");
 const _ = require("underscore");
+const Client = require("./Client");
 
 
-class PinterestClient {
-    constructor(db, pinterestApi) {
-        this.db = db;
+class PinterestClient extends Client {
+    constructor(db, id, pinterestApi) {
+        super(db, id);
         this.pinterestApi = pinterestApi;
     }
 
-    static async create(db) {
-        const credentials = await db.collection("credentials").findOne({pinterest: {$exists: true}});
-        return new PinterestClient(db, PinterestDK.init(credentials.pinterest.access_token));
+    static async create(db, credential) {
+        return new PinterestClient(db, credential._id, PinterestDK.init(credential.pinterest.access_token));
     }
 
     async findBestBoards(hashtags) {
@@ -30,22 +30,29 @@ class PinterestClient {
         return _.unique(bestBoards);
     }
 
-    async post(path, caption, link, imgUrl, hashtags) {
+    async post(post) {
         const self = this;
-        return Promise.all((await self.findBestBoards(hashtags))
-            .map((board) => {
-                return self.pinterestApi.api('pins', {
+        return Promise.all((await self.findBestBoards(post.hashtags))
+            .map(async(board) => {
+                const posted = await self.pinterestApi.api('pins', {
                         method: 'POST',
                         body: {
                             board: board.id,
-                            note: caption,
-                            link: link,
-                            image_url: imgUrl
+                            note: post.caption,
+                            link: post.link,
+                            image_url: post.imgUrl
                         }
                     }
                 );
+                await self.db.collection("pinterest_pins_" + self.id).insertOne(posted);
+                return posted;
             }));
     }
 }
+
+if (!global.classes) {
+    global.classes = {};
+}
+global.classes.PinterestClient = PinterestClient;
 
 module.exports = PinterestClient;

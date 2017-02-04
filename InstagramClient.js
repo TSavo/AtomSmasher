@@ -1,76 +1,260 @@
 const Instagram = require('instagram-private-api').V1;
+const Client = require("./Client");
+const _ = require("underscore");
+const findHashtags = require("find-hashtags");
 
 
-class InstagramClient {
-    constructor(db, session) {
-        this.db = db;
+class InstagramClient extends Client {
+    constructor(db, id, session) {
+        super(db, id);
         this.session = session;
+        const self = this;
     }
 
+    async hashtag(query, maxResults) {
+        await this.enabledCheck();
+        const searchTerms = generateSearchTerms(query);
+        const self = this;
+        const hashtags = await Promise.all(searchTerms.map((term, index) => {
+            return new Promise((resolve) => {
+                setTimeout(resolve, 1000 * index);
+            }).then(() => {
+                return Instagram.Hashtag.search(self.session, term)
+            });
+        }));
+        console.log(hashtags);
+        const results = _(hashtags).chain().flatten().pluck("_params").unique(false, (item) => {
+            return item.id;
+        }).sortBy("mediaCount").reverse().value();
+        const hashtagsCollection = this.db.collection("instagram_hashtags");
+        hashtagsCollection.bulkWrite(results.map((hashtag) => {
+            return {
+                updateOne: {
+                    filter: {id: hashtag.id},
+                    update: hashtag,
+                    upsert: true
+                }
+            };
+        }));
+
+        return _(searchTerms.concat(_(results).pluck("name"))).chain().unique().first(maxResults || 10);
+    }
+
+
     async like(media) {
-        const like = await Instagram.Like.create(this.session, media.id);
-        await this.db.collection("instagram_likes").insertOne({mediaId:media.id});
-        return like;
+        await this.enabledCheck();
+        const accountId = await this.getAccountId();
+        const likedCollection = this.db.collection("instagram_likes_" + accountId);
+        if (await likedCollection.findOne({id: media.id})) {
+            throw "We already liked " + media.id;
+        }
+        return Instagram.Like.create(this.session, media.id).then((like) => {
+            likedCollection.insertOne({media: media._params, like: like._params});
+            return like;
+        });
     }
 
     async search(hashtag) {
-        return new Instagram.Feed.TaggedMedia(this.session, hashtag).get();
+        await this.enabledCheck();
+        const self = this;
+        return new Instagram.Feed.TaggedMedia(this.session, hashtag).get().then((medias) => {
+            if (medias.length == 0) {
+                return medias;
+            }
+            self.db.collection("instagram_media").bulkWrite(medias.map((media) => {
+                return {
+                    updateOne: {
+                        filter: {id: media._params.id},
+                        update: {
+                            id: media._params.id,
+                            media: media._params,
+                            account: media.account._params,
+                            createdOn: new Date()
+                        },
+                        upsert: true
+                    }
+                };
+            }));
+            self.db.collection("instagram_accounts").bulkWrite(medias.map((media) => {
+                media.account._params.updatedOn = new Date();
+                return {
+                    updateOne: {
+                        filter: {id: media.account.id},
+                        update: media.account._params,
+                        upsert: true
+                    }
+                };
+            }));
+            return medias;
+        });
     }
 
     async comment(media, comment) {
-        const commentData = await Instagram.Comment.create(this.session, media.id, comment);
-        await this.db.collection("instagram_comments").insertOne({mediaId:media.id, comment:comment});
-        return commentData;
+        await this.enabledCheck();
+        const accountId = await this.getAccountId();
+        const commentCollection = this.db.collection("instagram_comments_" + accountId);
+        if (await commentCollection.findOne({media: {id: media.id}})) {
+            throw "We already commented on " + media.id;
+        }
+        return Instagram.Comment.create(this.session, media.id, comment).then((commentData) => {
+            commentCollection.insertOne({media: media._params, comment: comment, data: commentData._params});
+            return commentData;
+        });
+    }
+
+    async shouldEngage(media) {
+        await this.enabledCheck();
+        const accountId = await this.getAccountId();
+        if (media.account.id == accountId) {
+            return false;
+        }
+        const commentCollection = this.db.collection("instagram_comments_" + accountId);
+        const likedCollection = this.db.collection("instagram_likes_" + accountId);
+        const followingCollection = this.db.collection("instagram_following_" + accountId);
+        const followersCollection = this.db.collection("instagram_followers_" + accountId);
+        return !(await Promise.all([commentCollection.findOne({media: {id: media.id}}),
+            likedCollection.findOne({id: media.id}),
+            followingCollection.findOne({id: media.account.id}),
+            followersCollection.findOne({id: media.account.id})
+        ])).reduce((left, right) => {
+            return left || right;
+        });
     }
 
     async follow(account) {
-        const relationship = Instagram.Relationship.create(this.session, account.id);
-        await this.db.collection("instagram_relationships").insertOne({accountId:account.id});
-        return relationship;
+        await this.enabledCheck();
+        const accountId = await this.getAccountId();
+        if (account.id == accountId) {
+            throw "We don't need to follow ourselves.";
+        }
+        const followedCollection = this.db.collection("instagram_following_" + await this.session.getAccountId());
+        if (await followedCollection.findOne({id: account.id})) {
+            throw "Already following: " + account.id;
+        }
+        return Instagram.Relationship.create(this.session, account.id).then((relationship) => {
+            followedCollection.insertOne(relationship._params);
+            return relationship;
+        });
     }
 
     async findUser(username) {
-        console.log(session);
+        await this.enabledCheck();
         return Instagram.Account.searchForUser(this.session, username);
     }
 
     async inbox() {
-        return new Instagram.Feed.Inbox(this.session).get();
+        await this.enabledCheck();
+        return downloadFeed(new Instagram.Feed.Inbox(this.session));
     }
 
     async mediaComments() {
+        await this.enabledCheck();
         return new Instagram.Feed.MediaComments(this.session).get();
     }
 
+    async followers() {
+        await this.enabledCheck();
+        return downloadFeed(new Instagram.Feed.AccountFollowers(this.session, await this.session.getAccountId()));
+    }
+
+    async following() {
+        await this.enabledCheck();
+        return downloadFeed(new Instagram.Feed.AccountFollowing(this.session, await this.session.getAccountId()));
+    }
+
+    async refreshFollowers() {
+        await this.enabledCheck();
+        const accountId = await this.session.getAccountId();
+        const followers = this.db.collection("instagram_followers_" + accountId);
+        await followers.deleteMany();
+        return followers.insertMany(_(await this.followers()).pluck("_params"));
+    }
+
+    async refreshFollowing() {
+        await this.enabledCheck();
+        const accountId = await this.session.getAccountId();
+        const following = this.db.collection("instagram_following_" + accountId);
+        await following.deleteMany();
+        return following.insertMany(_(await this.following()).pluck("_params"));
+    }
+
+    async notFollowedBack(){
+        const accountId = await this.session.getAccountId();
+        await this.refreshFollowers();
+        await this.refreshFollowing();
+        const followerIds = _(await this.db.collection("instagram_followers_" + accountId).find().project({id:true}).toArray()).pluck("id");
+        console.log(followerIds);
+        return this.db.collection("instagram_following_" + accountId).find({id:{$nin:followerIds}}).toArray();
+    }
+
     async upload(path) {
-        console.log(path);
+        await this.enabledCheck();
         const upload = await Instagram.Upload.photo(this.session, path);
-        await this.db.collection("instagram_uploads").insertOne({uploadId:upload.id, path:path});
+        await this.db.collection("instagram_uploads_" + await this.session.getAccountId()).insertOne({
+            upload: upload._params,
+            path: path
+        });
         return upload;
     }
 
-    async configurePhoto(uploadId, caption) {
-        console.log(uploadId);
-        const media = await Instagram.Media.configurePhoto(this.session, uploadId, caption);
-        await this.db.collection("instagram_medias").insertOne({mediaId:media.id, uploadId: uploadId, caption:caption});
+    async configurePhoto(upload, caption) {
+        await this.enabledCheck();
+        const media = await Instagram.Media.configurePhoto(this.session, upload._params.uploadId, caption);
+        await this.db.collection("instagram_medias_" + await this.session.getAccountId()).insertOne({
+            media: media._params,
+            upload: upload._params,
+            caption: caption
+        });
         return media;
     }
 
-    async post(path, caption, link, imageSrc, hashtags){
-        return this.configurePhoto((await this.upload(path))._params.uploadId, caption + "\n.\n.\n.\n" + hashtags);
+    async post(post) {
+        await this.enabledCheck();
+        return this.configurePhoto(await this.upload(await post.jpg), post.caption + "\n.\n.\n.\n" + post.hashtags);
     }
 
-    static async create(db) {
-        return new Promise(async(resolve, reject) => {
-            const credentials = await db.collection("credentials").findOne({instagram:{$exists:true}});
-            const device = new Instagram.Device(credentials.instagram.username);
-            const storage = new Instagram.CookieFileStorage(__dirname + '/cookies.json');
-            Instagram.Session.create(device, storage, credentials.instagram.username, credentials.instagram.password)
-                .then((session) => {
-                    resolve(new InstagramClient(db, session));
-                }).catch(reject);
-        });
+    async getAccountId() {
+        return this.session.getAccountId();
+    }
+
+    static async create(db, credential) {
+        const device = new Instagram.Device(credential.instagram.username);
+        const storage = new Instagram.CookieMemoryStorage();
+        return Instagram.Session.create(device, storage, credential.instagram.username, credential.instagram.password)
+            .then((session) => {
+                return new InstagramClient(db, credential._id, session);
+            });
     }
 }
+
+function generateSearchTerms(str) {
+    return require("find-hashtags")(str);
+}
+
+function generateNGrams(str, windowSize) {
+    const output = [];
+    const input = str.split(" ");
+    for (let x = 0; x < input.length - windowSize; x++) {
+        let current = "";
+        for (let y = 0; y <= windowSize; y++) {
+            current += " " + input[x + y];
+        }
+        output.push(current.trim());
+    }
+    return output;
+}
+
+async function downloadFeed(feed) {
+    let output = await feed.get();
+    while (feed.isMoreAvailable()) {
+        output = output.concat(await feed.get());
+    }
+    return output;
+}
+
+if (!global.classes) {
+    global.classes = {};
+}
+global.classes.InstagramClient = InstagramClient;
 
 module.exports = InstagramClient;

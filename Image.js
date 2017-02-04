@@ -4,10 +4,18 @@ const exec = require('child_process').exec;
 
 class Image{
     constructor(src){
-        this.src = src;
+        if(src){
+            this.image = downloadImage(src);
+        }
     }
     async toJPG(){
-        return await flattenImage(await downloadImage(this.src));
+        return flattenImage(await this.image);
+    }
+
+    static async fromFile(file){
+        const output = new Image();
+        output.image = Promise.resolve(file);
+        return output;
     }
 }
 

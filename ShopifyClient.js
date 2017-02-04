@@ -1,22 +1,24 @@
 var Shopify = require('shopify-node-api');
+var ProductPost = require("./ProductPost");
 var _ = require("underscore");
 
 class ShopifyClient {
-    constructor(db, shopifyApi) {
-        console.log(db);
+    constructor(db, shopifyApi, id) {
         this.db = db;
         this.shopifyApi = shopifyApi;
+        this.id = id;
     }
 
     static async create(db) {
         const credentials = await db.collection("credentials").findOne({shopify: {$exists: true}});
         const shopifyApi = new Shopify(credentials.shopify);
-        return new ShopifyClient(db, shopifyApi);
+        return new ShopifyClient(db, shopifyApi, credentials._id);
     }
 
     async products() {
         const self = this;
         return new Promise(function (resolve, reject) {
+
             self.shopifyApi.get('/admin/products.json', {limit: 250}, function (err, data) {
                 if (err) {
                     reject(err);
@@ -35,13 +37,23 @@ class ShopifyClient {
         const oneWeekAgo = new Date();
         oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
         const staleIds = _(await this.db.collection("posted_products").find({createdOn: {$gt: freshness || oneWeekAgo}}).toArray()).pluck("productId");
-        return _.chain(await this.products())
+        const product =_.chain(await this.products())
             .reject((product) => {
                 return staleIds.includes(product.id);
             })
             .shuffle()
             .first()
             .value();
+        const self = this;
+        product.toPost = async () => {
+            return ProductPost.fromProduct(self.db, product);
+        };
+        return product;
     }
 }
+
+if(!global.classes){
+    global.classes = {};
+}
+global.classes.ShopifyClient = ShopifyClient;
 module.exports = ShopifyClient;
