@@ -24,7 +24,7 @@ class FacebookClient extends AbstractClient{
         const credentials = this.credentials;
         credentials.facebook.access_token = token;
         this.facebookApi.setAccessToken(token);
-        return this.db.collection("credentials").replaceOne({facebook: {$exists: true}}, credentials);
+        return this.db.collection("credentials").replaceOne({_id:this.id}, credentials);
     }
 
     async refreshAccessToken(){
@@ -47,10 +47,9 @@ class FacebookClient extends AbstractClient{
     async post(productPost){
         const self = this;
         this.enabledCheck();
-        return new Promise(function (resolve, reject) {
+        return new Promise(async function (resolve, reject) {
             self.facebookApi.api('/me/photos', 'post', {
-                source: fs.createReadStream(productPost.jpg),
-                options: {contentType: 'image/jpeg'},
+                source: fs.createReadStream(await productPost.image.image),
                 caption: productPost.caption + "\n\n" + productPost.hashtags,
                 link: productPost.link
             }, function (res) {

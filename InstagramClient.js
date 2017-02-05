@@ -22,7 +22,6 @@ class InstagramClient extends Client {
                 return Instagram.Hashtag.search(self.session, term)
             });
         }));
-        console.log(hashtags);
         const results = _(hashtags).chain().flatten().pluck("_params").unique(false, (item) => {
             return item.id;
         }).sortBy("mediaCount").reverse().value();
@@ -210,7 +209,7 @@ class InstagramClient extends Client {
 
     async post(post) {
         await this.enabledCheck();
-        return this.configurePhoto(await this.upload(await post.jpg), post.caption + "\n.\n.\n.\n" + post.hashtags);
+        return this.configurePhoto(await this.upload(await post.image.toJPG()), post.caption + "\n.\n.\n.\n" + post.hashtags);
     }
 
     async getAccountId() {

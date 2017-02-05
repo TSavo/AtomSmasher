@@ -20,7 +20,7 @@ class TwitterClient extends AbstractClient {
             if (!self.enabled()) {
                 return resolve("Skipping because this Twitter API is disabled.");
             }
-            self.twitterApi.post('media/upload', {media: fs.readFileSync(productPost.jpg)}, function (error, media) {
+            self.twitterApi.post('media/upload', {media: fs.readFileSync(await productPost.image.image)}, function (error, media) {
                 if (error) return reject(error);
                 const status = {
                     status: productPost.caption + " " + shortenTags(productPost.hashtags) + " " + productPost.link,

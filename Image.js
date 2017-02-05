@@ -21,12 +21,13 @@ class Image{
 
 async function downloadImage(url) {
     return new Promise(function (resolve, reject) {
+        const randomFilename = "scratch/" + randomFileName();
         https.get(url, function (response) {
-            var file = fs.createWriteStream("downloadedImage");
+            var file = fs.createWriteStream(randomFilename);
             response.pipe(file);
             file.on("finish", () => {
                 file.close();
-                resolve("downloadedImage");
+                resolve(randomFilename);
             });
         });
     });
@@ -34,14 +35,18 @@ async function downloadImage(url) {
 
 async function flattenImage(file) {
     return new Promise(function (resolve, reject) {
-        var cmd = "magick convert " + file + " -background white -flatten flattened.jpg";
+        const randomFilename = "scratch/" + randomFileName();
+        var cmd = "magick convert " + file + " -background white -flatten -gravity Center -resize 1080x1080 -extent 1080x1080 " + randomFilename + ".jpg";
         exec(cmd, function (err) {
             if (err) {
                 return reject(err);
             }
-            resolve("flattened.jpg");
+            resolve(randomFilename + ".jpg");
         });
     });
 }
 
+function randomFileName(){
+    return (Math.random().toString(36)+'00000000000000000').slice(2, 8+2);
+}
 module.exports = Image;

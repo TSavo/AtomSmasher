@@ -22,19 +22,19 @@ function createProductLink(product) {
 }
 
 class ProductPost {
-    constructor(caption, link, imgUrl, hashtags, jpg) {
+    constructor(caption, link, imgUrl, hashtags, image) {
         this.caption = caption;
         this.link = link;
         this.imgUrl = imgUrl;
         this.hashtags = hashtags;
-        this.jpg = jpg;
+        this.image = image;
     }
 
     static async fromProduct(db, product){
         const message = randomMarketingMessage(db);
         const tags = staticHashtags(db);
-        const image = new Image(product.image.src).toJPG();
-        return new ProductPost(product.title + " \n" + await message, createProductLink(product), product.image.src, parseTags(product.tags) + " " + await tags, await image);
+        const image = new Image(product.image.src);
+        return new ProductPost(product.title + " \n" + await message, createProductLink(product), product.image.src, parseTags(product.tags) + " " + await tags, image);
     }
 
 }

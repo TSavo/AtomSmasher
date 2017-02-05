@@ -4,71 +4,56 @@ const InstagramClient = require("./InstagramClient");
 const FacebookClient = require("./FacebookClient");
 const TwitterClient = require("./TwitterClient");
 const PinterestClient = require("./PinterestClient");
-
-const findHashtags = require("find-hashtags");
-
-var fs = require('fs');
+const fs = require('fs');
 const ExternalPost = require("./ExternalPost");
+const IMAPClient = require("./IMAPClient");
 
 const credentials = JSON.parse(fs.readFileSync(".credentials.json", {encoding: "UTF-8"}));
 
 async function getEmails() {
     const db = await mp.MongoClient.connect(credentials.mongodb);
-    const config = await db.collection("credentials").findOne({type:"email", imap:{$exists:true}});
-    const connection = await imaps.connect(config);
-    await connection.openBox("INBOX");
-    const searchCriteria = ['UNSEEN'];
-    const fetchOptions = {markSeen: true, bodies: ['HEADER', "TEXT"], struct: true};
-    const messages = await connection.search(searchCriteria, fetchOptions);
-    const attachments = await Promise.all(messages.map(async(message) => {
-        const output = {text: ""};
-        return Promise.all(imaps.getParts(message.attributes.struct).map((part) => {
-            if (part.disposition && (part.disposition.type == 'INLINE' || part.disposition.type == "ATTACHMENT")) {
-                return connection.getPartData(message, part).then((itemData) => {
-                    output.data = itemData;
-                });
-            } else {
-                return connection.getPartData(message, part).then((itemData) => {
-                    output.text += itemData;
-                });
-            }
-        })).then(() => {
-            return output;
-        });
-    }));
+    const imapClient = await db.collection("credentials").findOne({imap:{$exists:true}, type:"email"}).then((credential)=>{
+        return global.classes[credential.className].create(db, credential);
+    });
+    const attachments = await imapClient.getUnseenMessages();
     let count = 0;
-    const instagram = await InstagramClient.create(db, await db.collection("credentials").findOne({
-        instagram: {$exists: true},
+    const hashtagger = await db.collection("credentials").findOne({
+        hashtagger:true,
         enabled: true
-    }));
+    }).then((credential)=>{
+        return global.classes[credential.className].create(db, credential);
+    });
     const writtenAttachments = await Promise.all(attachments.map((post) => {
         return new Promise((resolve, reject) => {
-            const currentCount = count++;
-            fs.writeFile(currentCount + "", post.data, () => {
-                post.file = currentCount;
+            const filename = "scratch/" + randomFileName();
+            fs.writeFile(filename, post.data, () => {
+                post.file = filename;
                 resolve(post);
             });
         })
     }));
     const externalPosts = await Promise.all(writtenAttachments.map((post) => {
-        return ExternalPost.fromFile(db, post.file, post.text, instagram);
-    }));
+        return ExternalPost.fromFile(db, post.file, post.text, hashtagger);
+    })).catch(console.log);
     console.log(externalPosts);
-    Promise.all(await db.collection("credentials").find({
+    await Promise.all(await db.collection("credentials").find({
         type: "social",
         socialPosting: true,
         enabled: true
     }).map(async(credential) => {
-        console.log(credential);
         return global.classes[credential.className].create(db, credential);
     }).toArray()).then(async(clients) => {
-        console.log(clients);
         return Promise.all(clients.map(async (client) => {
             return Promise.all(externalPosts.map(async (post) => {
                 return await client.post(post);
             }));
         }));
     }).catch(console.log);
+    db.close();
+}
+
+function randomFileName(){
+    return (Math.random().toString(36)+'00000000000000000').slice(2, 8+2);
 }
 
 getEmails().catch(console.log);
