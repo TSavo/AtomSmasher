@@ -30,6 +30,12 @@ class Client {
     async shouldFollow(){
         return (await this.load()).follow;
     }
+    async shouldUnfollow(){
+        return (await this.load()).unfollow;
+    }
+    async shouldUnlike(){
+        return (await this.load()).unlike;
+    }
     async shouldComment(){
         return (await this.load()).comment;
     }

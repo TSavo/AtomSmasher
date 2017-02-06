@@ -5,10 +5,10 @@ const findHashtags = require("find-hashtags");
 
 
 class InstagramClient extends Client {
-    constructor(db, id, session) {
+    constructor(db, id, session, name) {
         super(db, id);
         this.session = session;
-        const self = this;
+        this.identity = name + " [Instagram]";
     }
 
     async hashtag(query, maxResults) {
@@ -120,6 +120,10 @@ class InstagramClient extends Client {
         });
     }
 
+    async followMedia(media){
+        return this.follow(media.account);
+    }
+
     async follow(account) {
         await this.enabledCheck();
         const accountId = await this.getAccountId();
@@ -132,6 +136,19 @@ class InstagramClient extends Client {
         }
         return Instagram.Relationship.create(this.session, account.id).then((relationship) => {
             followedCollection.insertOne(relationship._params);
+            return relationship;
+        });
+    }
+
+    async unfollow(account){
+        await this.enabledCheck();
+        const accountId = await this.getAccountId();
+        if (account.id == accountId) {
+            throw "We don't need to unfollow ourselves.";
+        }
+        const followedCollection = this.db.collection("instagram_following_" + accountId);
+        return Instagram.Relationship.destroy(this.session, account.id).then((relationship) =>{
+            followedCollection.removeMany({id:account.id});
             return relationship;
         });
     }
@@ -182,7 +199,6 @@ class InstagramClient extends Client {
         await this.refreshFollowers();
         await this.refreshFollowing();
         const followerIds = _(await this.db.collection("instagram_followers_" + accountId).find().project({id:true}).toArray()).pluck("id");
-        console.log(followerIds);
         return this.db.collection("instagram_following_" + accountId).find({id:{$nin:followerIds}}).toArray();
     }
 
@@ -221,7 +237,7 @@ class InstagramClient extends Client {
         const storage = new Instagram.CookieMemoryStorage();
         return Instagram.Session.create(device, storage, credential.instagram.username, credential.instagram.password)
             .then((session) => {
-                return new InstagramClient(db, credential._id, session);
+                return new InstagramClient(db, credential._id, session, credential.instagram.username);
             });
     }
 }

@@ -45,7 +45,9 @@ async function getEmails() {
     }).toArray()).then(async(clients) => {
         return Promise.all(clients.map(async (client) => {
             return Promise.all(externalPosts.map(async (post) => {
-                return await client.post(post);
+                return await client.post(post).then(()=>{
+                    console.log(client.identity + " posted " + post.caption);
+                });
             }));
         }));
     }).catch(console.log);

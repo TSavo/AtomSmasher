@@ -18,30 +18,35 @@ function selectRandom(list) {
 }
 
 async function uploadProduct(shopify, clients) {
-    const product = await shopify.getFreshProduct();
-    const productPost = await product.toPost().catch(console.log);
     clients.forEach(async(client) => {
+        const product = await shopify.getFreshProduct().catch(log);
+        const productPost = await product.toPost().catch(log);
         if (!(await client.enabled() && await client.mediaPosting())) {
             return console.log("Skipping posting on " + client.constructor.name + " because it is disabled.");
         }
-        client.post(productPost).catch(console.log);
+        if(Math.random() > 0.9) {
+            productPost.applyTemplate("assets/" + _(fs.readdirSync("assets")).chain().shuffle().first());
+        }
+        client.post(productPost).then(() => {
+            log(client.identity + " posted: " + productPost.caption);
+        }).then(() => {
+            shopify.addRecentlyPosted(product);
+        }).catch(log);
+
     });
-    shopify.addRecentlyPosted(product);
     setTimeout(function () {
         uploadProduct(shopify, clients);
-    }, (1000 * 60 * 45) + Math.random() * (1000 * 60 * 60 * 2));
+    }, (1000 * 60 * 30) + Math.random() * (1000 * 60 * 60));
 }
 
-async function engageAudience(session) {
-    const timerDelay = 5000;
+async function engageAudience(session, notFollowedBack, likes) {
     if (!(await session.enabled() && await session.audienceEngagement())) {
-        console.log("Skipping audience engagement with " + session.constructor.name + " because the session isn't enabled.");
         return setTimeout(() => {
             engageAudience(session);
         }, 1000 * 60);
     }
-    session.search(selectRandom(searchHashtags)).then(async(media) => {
-        media = _(media).first(5);
+    return session.search(selectRandom(searchHashtags)).then(async(media) => {
+        media = _(media).chain().shuffle().first(5).value();
         media = _(await Promise.all(media.map(async(item) => {
             item.shouldEngage = await session.shouldEngage(item);
             return item;
@@ -49,49 +54,98 @@ async function engageAudience(session) {
             return item.shouldEngage;
         });
         const delayFactor = 1000 * (await session.delayFactor()) * media.length;
-        media.forEach(async(choice) => {
-            console.log("Found: " + choice.id + " [" + choice._params.caption + "] by " + choice.account._params.username);
-            if (await session.shouldFollow()) {
-                delay(function () {
-                    session.follow(choice.account).then((result) => {
-                        console.log("Followed: " + choice.account._params.username);
-                    }).catch(console.log);
-                }, delayFactor);
-            }
-            if (await session.shouldLike()) {
+        const commentFactor = await session.commentFactor();
+        const shouldLike = await session.shouldLike();
+        const shouldComment = await session.shouldComment();
+        const shouldFollow = await session.shouldFollow();
+        const shouldUnfollow = await session.shouldUnfollow();
+        const shouldUnlike = await session.shouldUnlike();
 
-                delay(function () {
-                    session.like(choice).then(() => {
-                        console.log("Liked: " + choice.id);
-                    }).catch(console.log);
+        let actions = media.map((choice) => {
+            if (shouldFollow) {
+                return randomDelay(function () {
+                    return session.followMedia(choice).then((follow) => {
+                        log(session.identity + " Followed: " + choice.id);
+                        return follow;
+                    });
                 }, delayFactor);
-            }
-            if (await session.shouldComment() && Math.random() < await session.commentFactor()) {
-                delay(function () {
-                    let message = selectRandom(messages) + selectRandom(suffix);
-                    session.comment(choice, message).then(() => {
-                        console.log("Commented on " + choice.id + ": " + message);
-                    }).catch(console.log);
-                }, delayFactor);
+            } else {
+                return Promise.resolve();
             }
         });
-        setTimeout(async() => {
-            await engageAudience(session);
-        }, timerDelay + delayFactor);
-    }).catch(console.log);
+        if (shouldLike) {
+            actions = actions.concat(media.map((choice) => {
+                return randomDelay(function () {
+                    return session.like(choice).then((like) => {
+                        log(session.identity + " Liked: " + choice.id);
+                        return like;
+                    });
+                }, delayFactor);
+            }));
+        }
+        if (shouldComment) {
+            actions = actions.concat(media.map((choice) => {
+                if (Math.random() < commentFactor) {
+                    return randomDelay(function () {
+                        let message = selectRandom(messages) + selectRandom(suffix);
+                        return session.comment(choice, message).then((comment) => {
+                            log(session.identity + " Commented on " + choice.id + ": " + message);
+                            return comment;
+                        });
+                    }, delayFactor);
+                } else {
+                    return Promise.resolve();
+                }
+            }));
+        }
+        if (shouldUnfollow) {
+            actions = actions.concat(media.map(() => {
+                const unfollow = notFollowedBack.pop();
+                return randomDelay(() => {
+                    session.unfollow(unfollow).then((unfollowed) => {
+                        log(session.identity + " Unfollowed: " + unfollow.id);
+                        return unfollowed;
+                    })
+                }, delayFactor)
+            }));
+        }
+        if(shouldUnlike && likes.length > 0){
+            actions = actions.concat(media.map(() => {
+                const like = likes.pop();
+                return randomDelay(() => {
+                    session.unlike(like).then((unliked) => {
+                        log(session.identity + " Unliked: " + unliked.id);
+                        return unliked;
+                    })
+                }, delayFactor)
+            }));
+        }
+        setTimeout(() => {
+            engageAudience(session, notFollowedBack, likes);
+        }, delayFactor);
+        return Promise.all(actions);
+    }).catch(log);
 }
 
 mp.MongoClient.connect(credentials.mongodb).then(async(db) => {
     return Promise.all(await db.collection("credentials").find({type: "social"}).map(async(credential) => {
         return global.classes[credential.className].create(db, credential);
     }).toArray()).then(async(items) => {
-        const clients = _(items).flatten();
-        clients.forEach(engageAudience);
-        return uploadProduct(await ShopifyClient.create(db), clients);
+        items = await Promise.all(items);
+        items.forEach(async(item) => {
+            engageAudience(item, item.notFollowedBack ? await item.notFollowedBack() : [], await item.shouldUnlike() ? await item.likes() : []);
+        });
+        return uploadProduct(await ShopifyClient.create(db), items);
     });
-}).catch(console.log);
+}).catch(log);
 
-function delay(fun, delayFactor) {
-    setTimeout(fun, 5000 + (Math.random() * delayFactor));
+async function randomDelay(fun, delayFactor) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, Math.random() * delayFactor);
+    }).then(fun);
+}
+
+function log(message) {
+    console.log("[" + new Date() + "] " + (typeof message == "string" ? message : JSON.stringify(message)));
 }
 

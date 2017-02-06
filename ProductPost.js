@@ -6,9 +6,7 @@ async function staticHashtags(db){
 }
 
 async function randomMarketingMessage(db){
-    return _(await db.collection("marketing_messages").aggregate(
-        { $sample: { size: 1 } }
-    ).toArray()).pluck("message")[0];
+    return _(await db.collection("marketing_messages").find().toArray()).chain().pluck("message").shuffle().first().value();
 }
 
 function parseTags(tags) {
@@ -35,6 +33,10 @@ class ProductPost {
         const tags = staticHashtags(db);
         const image = new Image(product.image.src);
         return new ProductPost(product.title + " \n" + await message, createProductLink(product), product.image.src, parseTags(product.tags) + " " + await tags, image);
+    }
+
+    async applyTemplate(template){
+        this.image.applyTemplate(template);
     }
 
 }

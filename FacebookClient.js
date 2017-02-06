@@ -9,9 +9,15 @@ class FacebookClient extends AbstractClient{
         this.facebookApi = facebookApi;
         this.credentials = credentials;
         const self=this;
-        setInterval(async ()=>{
-            self.updateAccessToken(await self.refreshAccessToken());
+        self.refreshAccessToken().then((token)=>{
+            self.updateAccessToken(token);
+        });
+        setInterval(()=>{
+            self.refreshAccessToken().then((token)=>{
+                self.updateAccessToken(token);
+            });
         }, 1000 * 60 * 15);
+        this.identity = "App ID: " + credentials.facebook.client_id + " [Facebook]";
     }
 
     static async create(db, credential) {
@@ -21,6 +27,7 @@ class FacebookClient extends AbstractClient{
     }
 
     async updateAccessToken(token){
+        console.log("[" + new Date() + "] " + this.identity + " token updated: " + token);
         const credentials = this.credentials;
         credentials.facebook.access_token = token;
         this.facebookApi.setAccessToken(token);
