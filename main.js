@@ -17,26 +17,22 @@ function selectRandom(list) {
     return list[parseInt(Math.random() * list.length)];
 }
 
-async function uploadProduct(shopify, clients) {
-    clients.forEach(async(client) => {
-        const product = await shopify.getFreshProduct().catch(log);
-        const productPost = await product.toPost().catch(log);
-        if (!(await client.enabled() && await client.mediaPosting())) {
-            return console.log("Skipping posting on " + client.constructor.name + " because it is disabled.");
-        }
-        if(Math.random() > 0.9) {
-            productPost.applyTemplate("assets/" + _(fs.readdirSync("assets")).chain().shuffle().first());
-        }
-        client.post(productPost).then(() => {
-            log(client.identity + " posted: " + productPost.caption);
-        }).then(() => {
-            shopify.addRecentlyPosted(product);
-        }).catch(log);
+async function uploadProduct(shopify, client) {
+    const product = await shopify.getFreshProduct();
+    const productPost = await product.toPost();
+    if (!(await client.enabled() && await client.mediaPosting())) {
+        return console.log("Skipping posting on " + client.constructor.name + " because it is disabled.");
+    }
+    await productPost.applyTemplate("assets/" + _(fs.readdirSync("assets")).chain().shuffle().first().value());
+    setTimeout(() => {
+        uploadProduct(shopify, client).catch(log);
+    }, (1000 * 60 * 30) + Math.random() * (1000 * 60 * 100));
+    return client.post(productPost).then(() => {
+        log(client.identity + " posted: " + productPost.caption);
+    }).then(() => {
+        shopify.addRecentlyPosted(product);
+    }).catch(log);
 
-    });
-    setTimeout(function () {
-        uploadProduct(shopify, clients);
-    }, (1000 * 60 * 30) + Math.random() * (1000 * 60 * 60));
 }
 
 async function engageAudience(session, notFollowedBack, likes) {
@@ -109,7 +105,7 @@ async function engageAudience(session, notFollowedBack, likes) {
                 }, delayFactor)
             }));
         }
-        if(shouldUnlike && likes.length > 0){
+        if (shouldUnlike && likes.length > 0) {
             actions = actions.concat(media.map(() => {
                 const like = likes.pop();
                 return randomDelay(() => {
@@ -128,14 +124,16 @@ async function engageAudience(session, notFollowedBack, likes) {
 }
 
 mp.MongoClient.connect(credentials.mongodb).then(async(db) => {
+    const shopify = await ShopifyClient.create(db);
     return Promise.all(await db.collection("credentials").find({type: "social"}).map(async(credential) => {
         return global.classes[credential.className].create(db, credential);
     }).toArray()).then(async(items) => {
         items = await Promise.all(items);
         items.forEach(async(item) => {
             engageAudience(item, item.notFollowedBack ? await item.notFollowedBack() : [], await item.shouldUnlike() ? await item.likes() : []);
+            randomDelay(uploadProduct(shopify, item), 1000 * 5).then(() => {
+            });
         });
-        return uploadProduct(await ShopifyClient.create(db), items);
     });
 }).catch(log);
 

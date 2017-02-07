@@ -225,7 +225,8 @@ class InstagramClient extends Client {
 
     async post(post) {
         await this.enabledCheck();
-        return this.configurePhoto(await this.upload(await post.image.toJPG()), post.caption + "\n.\n.\n.\n" + post.hashtags);
+        const image = await post.image.toJPG();
+        return this.configurePhoto(await this.upload(image), post.caption + "\n.\n.\n.\n" + post.hashtags);
     }
 
     async getAccountId() {

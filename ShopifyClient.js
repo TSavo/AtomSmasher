@@ -34,9 +34,9 @@ class ShopifyClient {
     }
 
     async getFreshProduct(freshness) {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        const staleIds = _(await this.db.collection("posted_products").find({createdOn: {$gt: freshness || oneWeekAgo}}).toArray()).pluck("productId");
+        const oneDayAgo = new Date();
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+        const staleIds = _(await this.db.collection("posted_products").find({createdOn: {$gt: freshness || oneDayAgo}}).toArray()).pluck("productId");
         const product =_.chain(await this.products())
             .reject((product) => {
                 return staleIds.includes(product.id);

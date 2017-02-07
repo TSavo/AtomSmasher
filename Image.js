@@ -10,7 +10,7 @@ class Image {
     }
 
     async toJPG() {
-        return flattenImage(await this.image);
+        return this.image;
     }
 
     static async fromFile(file) {
@@ -19,11 +19,8 @@ class Image {
         return output;
     }
 
-    applyTemplate(template) {
-        const self = this;
-        self.image = new Promise(async() => {
-            return compositeImage(await self.image, template);
-        });
+    async applyTemplate(template) {
+        this.image = compositeImage(await this.image, template);
     }
 }
 
