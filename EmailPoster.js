@@ -12,15 +12,17 @@ const credentials = JSON.parse(fs.readFileSync(".credentials.json", {encoding: "
 
 async function getEmails() {
     const db = await mp.MongoClient.connect(credentials.mongodb);
-    const imapClient = await db.collection("credentials").findOne({imap:{$exists:true}, type:"email"}).then((credential)=>{
+    const imapClient = await db.collection("credentials").findOne({
+        imap: {$exists: true},
+        type: "email"
+    }).then((credential) => {
         return global.classes[credential.className].create(db, credential);
     });
     const attachments = await imapClient.getUnseenMessages();
-    let count = 0;
     const hashtagger = await db.collection("credentials").findOne({
-        hashtagger:true,
+        hashtagger: true,
         enabled: true
-    }).then((credential)=>{
+    }).then((credential) => {
         return global.classes[credential.className].create(db, credential);
     });
     const writtenAttachments = await Promise.all(attachments.map((post) => {
@@ -43,19 +45,24 @@ async function getEmails() {
     }).map(async(credential) => {
         return global.classes[credential.className].create(db, credential);
     }).toArray()).then(async(clients) => {
-        return Promise.all(clients.map(async (client) => {
-            return Promise.all(externalPosts.map(async (post) => {
-                return await client.post(post).then(()=>{
+        return Promise.all(clients.map(async(client) => {
+            return Promise.all(externalPosts.map(async(post) => {
+                return client.post(post).then(() => {
                     console.log(client.identity + " posted " + post.caption);
                 });
             }));
         }));
+    }).then(() => {
+        externalPosts.forEach((post)=>{
+            post.cleanUp();
+        });
     }).catch(console.log);
     db.close();
+    //connection.end();
 }
 
-function randomFileName(){
-    return (Math.random().toString(36)+'00000000000000000').slice(2, 8+2);
+function randomFileName() {
+    return (Math.random().toString(36) + '00000000000000000').slice(2, 8 + 2);
 }
 
 getEmails().catch(console.log);

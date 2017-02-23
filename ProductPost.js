@@ -1,6 +1,7 @@
 const Image = require("./Image");
 const _ = require("underscore");
-
+const https = require("https");
+const fs = require("fs");
 async function staticHashtags(db){
     return _(await db.collection("static_hashtags").find().toArray()).pluck("hashtag").join(" ");
 }
@@ -31,14 +32,36 @@ class ProductPost {
     static async fromProduct(db, product){
         const message = randomMarketingMessage(db);
         const tags = staticHashtags(db);
-        const image = new Image(product.image.src);
+        const image = new Image(downloadImage(product.image.src));
         return new ProductPost(product.title + " \n" + await message, createProductLink(product), product.image.src, parseTags(product.tags) + " " + await tags, image);
     }
 
     async applyTemplate(template){
-        this.image.applyTemplate(template);
+        this.image = await this.image.applyTemplate(template);
     }
 
+    async cleanUp(){
+        return this.image.cleanUp();
+    }
+
+}
+
+async function downloadImage(url) {
+    return new Promise(function (resolve, reject) {
+        const randomFilename = "scratch/" + randomFileName();
+        https.get(url, function (response) {
+            const file = fs.createWriteStream(randomFilename);
+            response.pipe(file);
+            file.on("finish", () => {
+                file.close();
+                resolve(randomFilename);
+            });
+        });
+    });
+}
+
+function randomFileName() {
+    return (Math.random().toString(36) + '00000000000000000').slice(2, 8 + 2);
 }
 
 

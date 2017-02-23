@@ -1,41 +1,42 @@
-const https = require("https");
-const fs = require("fs");
+const fs = require("fs.promised");
 const exec = require('child_process').exec;
 
 class Image {
-    constructor(src) {
-        if (src) {
-            this.image = downloadImage(src);
+    constructor(src, parent) {
+        this.image = src;
+        this.flattened = false;
+        if(parent){
+           this.parent = parent;
         }
     }
 
     async toJPG() {
-        return this.image;
-    }
-
-    static async fromFile(file) {
-        const output = new Image();
-        output.image = Promise.resolve(file);
-        return output;
+        if(this.flattened){
+            return this.image;
+        }else{
+            return flattenImage(await this.image);
+        }
     }
 
     async applyTemplate(template) {
-        this.image = compositeImage(await this.image, template);
+        const img = new Image(compositeImage(await this.image, template), this);
+        img.flattened = true;
+        return img;
     }
-}
 
-async function downloadImage(url) {
-    return new Promise(function (resolve, reject) {
-        const randomFilename = "scratch/" + randomFileName();
-        https.get(url, function (response) {
-            const file = fs.createWriteStream(randomFilename);
-            response.pipe(file);
-            file.on("finish", () => {
-                file.close();
-                resolve(randomFilename);
-            });
+    async cleanUp(chainable){
+        if(!chainable){
+            chainable = Promise.resolve();
+        }
+        if(this.parent){
+            chainable = this.parent.cleanUp(chainable);
+        }
+        const self = this;
+        chainable = chainable.then(async ()=> {
+            return fs.unlink(await self.image);
         });
-    });
+        return chainable;
+    }
 }
 
 async function compositeImage(file, template) {
@@ -45,7 +46,7 @@ async function compositeImage(file, template) {
 async function flattenImage(file) {
     return new Promise(function (resolve, reject) {
         const randomFilename = "scratch/" + randomFileName();
-        const cmd = "magick convert -resize 1080x1080 -extent 1080x1080 " + file + " -background white -flatten -gravity Center " + randomFilename + ".jpg";
+        const cmd = "magick convert -resize 1080x1080 -extent 1080x1080 -gravity Center " + file + " -background white -flatten " + randomFilename + ".jpg";
         exec(cmd.replace(/\//g, "\\"), function (err) {
             if (err) {
                 return reject(err);

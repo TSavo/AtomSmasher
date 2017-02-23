@@ -29,10 +29,14 @@ class ExternalPost {
         message = message.substring(0, message.indexOf("#")).trim();
         const staticHash = await staticHashtags(db);
         const tags = hashtagger.hashtag(caption, 10);
-        const image = await Image.fromFile(file);
+        const image = new Image(file);
         return new ExternalPost(message, "https://worlds-colliding.myshopify.com", "", (await tags).map((tag) => {
                 return "#" + tag;
-            }).join(" ") + " " + staticHash.join(" "), await image);
+            }).join(" ") + " " + staticHash.join(" "), image);
+    }
+
+    async cleanUp(){
+        return this.image.cleanUp();
     }
 }
 
