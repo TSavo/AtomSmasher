@@ -139,7 +139,7 @@ async function main() {
     const dbCredentials = JSON.parse(await fs.readFile(".credentials.json", {encoding: "UTF-8"}));
     const db = await mp.MongoClient.connect(dbCredentials.mongodb);
     const shopify = await ShopifyClient.create(db);
-    const credentials = await db.collection("credentials").find({type: "social"}).toArray();
+    const credentials = await db.collection("credentials").find({type: "social", enabled:true}).toArray();
     const clients = await Promise.all(credentials.map((credential) => {
         return global.classes[credential.className].create(db, credential);
     }));
